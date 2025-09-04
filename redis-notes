@@ -1,0 +1,210 @@
+(1) Why do we need caching in large-scale applications?
+
+ANS : We need caching in large-scale applications to reduce repeated database/API calls and improve response time by serving frequently used data faster.
+
+ 
+(2) What is cache ?
+
+ANS : Cache is a temporary storage that keeps frequently used data so it can be accessed faster instead of fetching it again from the database or API
+
+(3) How many Types of Cache ?
+
+-> By location (in spring boot , application level )
+-------------------------------------------------------
+a. In-Memory Cache → inside app’s RAM (local). :=> Stored inside the same application server’s RAM (e.g., using @Cacheable with default ConcurrentHashMap in Spring Boot).
+b. Distributed Cache → separate system (Redis, Hazelcast).:=> Stored in a separate cache server (e.g., Redis, Hazelcast, Memcached) that multiple application servers can share.
+
+-> By Hibernate/JPA levels ( in hibernate, session level )
+------------------------------------------------------------
+a. First-Level Cache → per session (always ON).
+b. Second-Level Cache → shared across sessions (optional).
+
+
+EXAMPLE - IN-MEMORY CACHE :
+###########################
+
+Entity (Book.java) : 
+--------------------
+
+@Entity
+@Data
+public class Book {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String title;
+    private String author;
+}
+
+
+
+Repository (BookRepository.java):
+---------------------------------
+
+public interface BookRepository extends JpaRepository<Book, Long> {
+}
+
+
+Service (BookService.java) :
+----------------------------
+
+@Service
+public class BookService {
+
+    @Autowired
+    private final BookRepository repo;
+
+    // Cached method
+    @Cacheable("books")
+    public Optional<Book> getBookById(Long id) {
+        System.out.println("Fetching from DB for id = " + id); // to test caching
+        return repo.findById(id);
+    }
+
+    public Book saveBook(Book book) {
+        return repo.save(book);
+    }
+}
+
+
+
+Controller (BookController.java) :
+----------------------------------
+
+@RestController
+@RequestMapping("/books")
+public class BookController {
+
+    @Autowired
+    private final BookService service;
+
+    @PostMapping
+    public Book saveBook(@RequestBody Book book) {
+        return service.saveBook(book);
+    }
+
+    @GetMapping("/{id}")
+    public Optional<Book> getBook(@PathVariable Long id) {
+        return service.getBookById(id);
+    }
+}
+
+
+
+Enable Caching (Main Application Class)/ configuration class :
+---------------------------------------------------------------
+
+@SpringBootApplication
+@EnableCaching   // 🔥 Important
+public class CacheDemoApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(CacheDemoApplication.class, args);
+    }
+}
+
+
+
+NOTE: How it works
+
+1. Run the app.
+2. Save a book
+
+now put break point and run in debug then Fetch the book twice  :
+-- First time → “Fetching from DB…” printed.
+-- Second time → served from cache (no DB print).
+
+
+ANNOTATIONS EXPLAIN :
+1. @EnableCaching → Enables caching feature in the app.Think of it as a master switch for caching.Without this, Spring will ignore all @Cacheable, @CacheEvict, etc.
+2. @Cacheable → Caches the method result for faster future calls.
+3. @CachePut -> Difference from @Cacheable → @Cacheable kabhi method call skip karta hai (agar cache hit mil gaya), lekin @CachePut hamesha call karega aur cache ko fresh karega.
+4. @CacheEvict -> Purpose → Cache entry ko delete (evict) karta hai. Useful when data delete/update hota hai aur tumhe purana cache clear karna hai.
+
+
+NOTE: problem with In-memory cache : suppose you are doing horizental scalling so you have more than one nodes, and in one nodes data got change but other nodes have still old data.
+
+IMPLEMENTATION OF DISTRIBUTED CACHE (REDIS)
+###############################################
+
+🔑 Important Difference
+--------------------------
+
+- Spring Cache with Redis (@Cacheable) → works at service method level.
+- Hibernate 2nd-level cache with Redis → works at entity level inside JPA/Hibernate.
+
+👉 They are independent systems. You can use one or both:
+-----------------------------------------------------------
+- If you want caching on method calls → use Spring Cache (@Cacheable).
+- If you want caching on entity loading via Hibernate → enable Hibernate 2nd-level cache (with Redis provider).
+
+
+
+STEP-1 :
+-> use privous spring boot application having same annotations
+-> if you want Hibernate to use Redis for 2nd-level cache, you need a Redis-based Hibernate cache provider library :
+<dependency>
+    <groupId>com.github.debop</groupId>
+    <artifactId>hibernate-redis</artifactId>
+    <version>2.10.6</version>
+</dependency>
+
+-> also in properties files give below details:
+ 
+# Cache
+spring.cache.type=redis
+
+# Enable Hibernate Second-Level Cache and Query Cache
+spring.jpa.properties.hibernate.cache.use_second_level_cache=true
+spring.jpa.properties.hibernate.cache.use_query_cache=true
+spring.jpa.properties.hibernate.cache.region.factory_class=com.github.debop.hibernate.redis.RedisRegionFactory
+spring.jpa.properties.hibernate.generate_statistics=true
+
+# Redis Configuration
+spring.data.redis.host=EC2_PUBLIC_IP
+spring.data.redis.port=6379
+spring.data.redis.password=yourStrongPassword
+
+-> entity :
+
+import jakarta.persistence.*;
+import org.hibernate.annotations.Cache;
+import org.hibernate.annotations.CacheConcurrencyStrategy;
+
+@Entity
+@Cacheable
+@Cache(usage = CacheConcurrencyStrategy.READ_WRITE) // or NONSTRICT_READ_WRITE, READ_ONLY
+public class Employee {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+    private Double salary;
+}
+
+
+
+STEPS-2 :
+- Install Docker on your AWS Linux EC2 machine.
+- Start Docker service.
+- Pull Redis image from Docker Hub.
+- Run Redis container with password :
+docker run -d \
+  --name redis \
+  -p 6379:6379 \
+  -e REDIS_PASSWORD=yourStrongPassword \
+  redis:latest redis-server --requirepass yourStrongPassword
+
+
+NOTE : HOW WORK ?
+
+- Restart app → now Hibernate will:
+- First check Session cache (L1).
+- Then check Redis-backed 2nd-level cache.
+- If not found → hit the DB.
+
+
+
+
+
+
