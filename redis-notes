@@ -151,13 +151,13 @@ STEP-1 :
 -> also in properties files give below details:
  
 # Cache
-spring.cache.type=redis
+spring.cache.type = redis
 
 # Enable Hibernate Second-Level Cache and Query Cache
-spring.jpa.properties.hibernate.cache.use_second_level_cache=true
-spring.jpa.properties.hibernate.cache.use_query_cache=true
-spring.jpa.properties.hibernate.cache.region.factory_class=com.github.debop.hibernate.redis.RedisRegionFactory
-spring.jpa.properties.hibernate.generate_statistics=true
+spring.jpa.properties.hibernate.cache.use_second_level_cache = true
+spring.jpa.properties.hibernate.cache.use_query_cache = true
+spring.jpa.properties.hibernate.cache.region.factory_class = com.github.debop.hibernate.redis.RedisRegionFactory
+spring.jpa.properties.hibernate.generate_statistics = true
 
 # Redis Configuration
 spring.data.redis.host=EC2_PUBLIC_IP
